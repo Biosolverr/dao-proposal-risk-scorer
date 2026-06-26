@@ -1,1 +1,93 @@
-# dao-proposal-risk-scorer
+# DAO Proposal Risk Scorer
+
+AI-powered DAO governance tool built on **GenLayer Intelligent Contracts**.
+
+Each GenLayer validator independently scores proposals via LLM, then the Optimistic Democracy protocol reaches consensus on the risk score, benefit score, and recommendation. The required voting quorum is derived automatically from the consensus risk score.
+
+## How It Works
+
+```
+User submits proposal
+        ↓
+Broadcast to all 5 GenLayer validators
+        ↓
+Each validator independently: LLM scores risk + benefit
+        ↓
+Optimistic Democracy consensus (±15 tolerance on scores)
+        ↓
+Result stored on-chain: risk_score, benefit_score,
+recommendation (ACCEPT/REVISE/REJECT), required_quorum,
+analysis, key_risks, key_benefits
+```
+
+## Quorum Derivation
+
+| Risk Score | Level  | Required Quorum |
+|:----------:|:------:|:---------------:|
+| 0 – 39     | Low    | **51%**         |
+| 40 – 69    | Medium | **60%**         |
+| 70 – 100   | High   | **75%**         |
+
+## Repository Structure
+
+```
+dao-proposal-risk-scorer/
+├── contracts/
+│   └── dao_risk_scorer.py   ← GenLayer Intelligent Contract
+├── frontend/
+│   └── index.html           ← Full frontend (single file)
+├── main.ts                  ← Deno static server
+└── README.md
+```
+
+## Deploy
+
+### 1. Deploy the contract
+
+Open `contracts/dao_risk_scorer.py` in [GenLayer Studio](https://studio.genlayer.com), click **Deploy new instance**. Copy the deployed contract address.
+
+### 2. Update the frontend
+
+In `frontend/index.html`, replace:
+```js
+const CONTRACT_ADDRESS = 'REPLACE_WITH_DEPLOYED_CONTRACT_ADDRESS';
+```
+with your deployed address.
+
+### 3. Run locally
+
+```bash
+deno run --allow-net --allow-read --allow-env main.ts
+```
+
+Open `http://localhost:8000`.
+
+### 4. Deploy to Vercel
+
+```bash
+vercel --prod
+```
+
+Set `PORT` env var if needed. Vercel will serve `main.ts` as a Deno edge function — or just deploy the `frontend/` folder as a static site directly.
+
+## Contract Methods
+
+### Write
+| Method | Args | Description |
+|--------|------|-------------|
+| `submit_proposal` | `title: str, description: str` | Score a proposal via AI consensus |
+
+### Read
+| Method | Args | Returns |
+|--------|------|---------|
+| `get_proposal` | `proposal_id: str` | Full proposal with scoring |
+| `list_proposals` | — | All proposals (summary) |
+| `get_stats` | — | Aggregate DAO stats |
+| `get_dao_name` | — | DAO name string |
+
+## Tech Stack
+
+- **GenLayer Intelligent Contract** — Python, `gl.vm.run_nondet_unsafe`, `gl.nondet.exec_prompt`
+- **Frontend** — Vanilla JS, `genlayer-js`, Google Fonts (Syne + Inter + JetBrains Mono)
+- **Server** — Deno (`std@0.224.0`)
+- **Deploy** — Vercel (frontend) + GenLayer Studio (contract)
