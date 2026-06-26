@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DAO Proposal Risk Scorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ── reset & tokens ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --white:   #FFFFFF;
+  --off:     #F7F7F5;
+  --gray100: #F3F4F6;
+  --gray200: #E5E7EB;
+  --gray300: #D1D5DB;
+  --gray400: #9CA3AF;
+  --gray500: #6B7280;
+  --gray700: #374151;
+  --gray900: #111827;
+  --black:   #0A0A0A;
+  --ink:     #0D0D0D;
+
+  --risk-hi:  #DC2626;
+  --risk-mid: #D97706;
+  --risk-lo:  #16A34A;
+  --accept:   #16A34A;
+  --revise:   #D97706;
+  --reject:   #DC2626;
+
+  --sidebar-bg: #0D0D0D;
+  --sidebar-border: #1F1F1F;
+
+  --syne: 'Syne', sans-serif;
+  --inter: 'Inter', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+
+  --radius: 8px;
+  --radius-sm: 4px;
+  --sidebar-w: 280px;
+  --header-h: 60px;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  background: var(--white);
+  color: var(--ink);
+  font-family: var(--inter);
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ── layout ────────────────────────────────────────────────────────────── */
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: var(--header-h) 1fr;
+  min-height: 100vh;
+}
+
+/* ── header ─────────────────────────────────────────────────────────────── */
+.header {
+  grid-column: 1 / -1;
+  background: var(--black);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  border-bottom: 1px solid #1a1a1a;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--syne);
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--white);
+  letter-spacing: -0.01em;
+}
+
+.logo-icon {
+  width: 32px; height: 32px;
+  background: var(--white);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.header-chips {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chip {
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 4px 10px;
+  border-radius: 100px;
+  letter-spacing: 0.04em;
+}
+
+.chip-outline {
+  border: 1px solid #2a2a2a;
+  color: #666;
+}
+
+.chip-live {
+  border: 1px solid #2d4a2d;
+  color: #4ade80;
+  background: #0d1a0d;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pulse {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
+
+/* ── sidebar ──────────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
+  height: calc(100vh - var(--header-h));
+  overflow-y: auto;
+  position: sticky;
+  top: var(--header-h);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 0;
+}
+
+.sidebar-section {
+  padding: 0 16px;
+  margin-bottom: 28px;
+}
+
+.sidebar-label {
+  font-size: 9px;
+  font-family: var(--mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #3a3a3a;
+  margin-bottom: 10px;
+  padding: 0 8px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  background: transparent;
+  color: #555;
+  font-family: var(--inter);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background .15s, color .15s;
+  letter-spacing: 0.01em;
+  margin-bottom: 1px;
+}
+
+.nav-item:hover { background: #161616; color: #aaa; }
+.nav-item.active { background: #1a1a1a; color: var(--white); }
+
+.nav-item .icon { width: 18px; text-align: center; font-size: 13px; }
+.nav-item .badge {
+  margin-left: auto;
+  font-size: 9px;
+  font-family: var(--mono);
+  color: #333;
+  font-weight: 600;
+}
+
+/* stats widget */
+.stats-widget {
+  margin-top: auto;
+  padding: 16px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stat-cell {
+  background: #111;
+  border: 1px solid #1e1e1e;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.stat-num {
+  font-family: var(--syne);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--white);
+  line-height: 1;
+  margin-bottom: 3px;
+}
+
+.stat-lbl {
+  font-size: 9px;
+  font-family: var(--mono);
+  color: #444;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stat-cell.span2 { grid-column: 1/-1; }
+
+/* proposal history in sidebar */
+.history-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background .12s;
+  margin-bottom: 2px;
+}
+
+.history-item:hover { background: #111; }
+
+.history-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.history-dot.ACCEPT { background: var(--accept); }
+.history-dot.REVISE { background: var(--revise); }
+.history-dot.REJECT { background: var(--reject); }
+
+.history-title {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.history-meta {
+  font-size: 10px;
+  color: #444;
+  font-family: var(--mono);
+  margin-top: 2px;
+}
+
+/* ── main ─────────────────────────────────────────────────────────────── */
+.main {
+  height: calc(100vh - var(--header-h));
+  overflow-y: auto;
+}
+
+.panel {
+  display: none;
+  padding: 36px 48px;
+  max-width: 900px;
+  animation: fadeIn .2s ease;
+}
+.panel.active { display: block; }
+
+@keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+
+/* ── section heading ───────────────────────────────────────────────────── */
+.panel-heading {
+  margin-bottom: 32px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--gray200);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.panel-title {
+  font-family: var(--syne);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  line-height: 1.1;
+  margin-bottom: 5px;
+}
+
+.panel-sub {
+  font-size: 13px;
+  color: var(--gray500);
+}
+
+.panel-num {
+  font-family: var(--syne);
+  font-size: 64px;
+  font-weight: 800;
+  color: var(--gray100);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* ── form ───────────────────────────────────────────────────────────────── */
+.field-group {
+  margin-bottom: 18px;
+}
+
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gray500);
+  margin-bottom: 7px;
+}
+
+.field-input,
+.field-textarea {
+  width: 100%;
+  background: var(--white);
+  border: 1.5px solid var(--gray200);
+  border-radius: var(--radius);
+  padding: 11px 14px;
+  font-family: var(--inter);
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.field-input:focus,
+.field-textarea:focus {
+  border-color: var(--gray400);
+  box-shadow: 0 0 0 3px rgba(0,0,0,.06);
+}
+
+.field-textarea {
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.6;
+}
+
+.field-hint {
+  font-size: 11px;
+  color: var(--gray400);
+  margin-top: 5px;
+}
+
+.field-count {
+  font-size: 11px;
+  color: var(--gray400);
+  text-align: right;
+  margin-top: 4px;
+  font-family: var(--mono);
+}
+
+/* ── buttons ────────────────────────────────────────────────────────────── */
+.btn-row { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: var(--radius);
+  font-family: var(--syne);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border: none;
+  transition: all .15s;
+}
+
+.btn-primary {
+  background: var(--black);
+  color: var(--white);
+}
+.btn-primary:hover { background: #222; }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--gray500);
+  border: 1.5px solid var(--gray200);
+}
+.btn-ghost:hover { border-color: var(--gray400); color: var(--ink); }
+
+/* ── score rings ─────────────────────────────────────────────────────── */
+.result-section {
+  display: none;
+  margin-top: 36px;
+  animation: fadeIn .4s ease;
+}
+.result-section.show { display: block; }
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--gray200);
+}
+
+.result-pid {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--gray400);
+  margin-bottom: 4px;
+}
+
+.result-title {
+  font-family: var(--syne);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.rec-badge {
+  font-family: var(--syne);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 8px 20px;
+  border-radius: 100px;
+  text-transform: uppercase;
+}
+
+.rec-ACCEPT { background: #f0fdf4; color: var(--accept); border: 1.5px solid #bbf7d0; }
+.rec-REVISE { background: #fffbeb; color: var(--revise); border: 1.5px solid #fde68a; }
+.rec-REJECT { background: #fef2f2; color: var(--reject); border: 1.5px solid #fecaca; }
+
+/* gauge rings */
+.gauges-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.gauge-card {
+  background: var(--off);
+  border: 1px solid var(--gray200);
+  border-radius: var(--radius);
+  padding: 24px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gauge-svg-wrap {
+  position: relative;
+  width: 100px;
+  height: 60px;
+  margin-bottom: 12px;
+}
+
+.gauge-svg {
+  overflow: visible;
+}
+
+.gauge-track {
+  fill: none;
+  stroke: var(--gray200);
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+.gauge-fill {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: 157;
+  stroke-dashoffset: 157;
+  transition: stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1);
+}
+
+.gauge-val {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--syne);
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.gauge-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gray500);
+  text-align: center;
+  margin-bottom: 3px;
+}
+
+.gauge-sub {
+  font-size: 11px;
+  color: var(--gray400);
+  text-align: center;
+}
+
+/* quorum card */
+.quorum-card {
+  background: var(--off);
+  border: 1px solid var(--gray200);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.quorum-val {
+  font-family: var(--syne);
+  font-size: 40px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.quorum-desc {
+  font-size: 13px;
+  color: var(--gray700);
+  line-height: 1.5;
+}
+
+.quorum-desc strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+
+/* analysis block */
+.analysis-block {
+  margin-top: 20px;
+  background: var(--off);
+  border: 1px solid var(--gray200);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+}
+
+.analysis-eyebrow {
+  font-size: 9px;
+  font-family: var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gray400);
+  margin-bottom: 8px;
+}
+
+.analysis-text {
+  font-size: 14px;
+  color: var(--gray700);
+  line-height: 1.7;
+}
+
+.risks-benefits {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.rb-card {
+  border: 1px solid var(--gray200);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+
+.rb-card.risks { border-left: 3px solid var(--risk-hi); }
+.rb-card.benefits { border-left: 3px solid var(--risk-lo); }
+
+.rb-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.rb-card.risks .rb-title { color: var(--risk-hi); }
+.rb-card.benefits .rb-title { color: var(--risk-lo); }
+
+.rb-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rb-list li {
+  font-size: 13px;
+  color: var(--gray700);
+  line-height: 1.4;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.rb-list li::before {
+  content: "—";
+  color: var(--gray300);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ── in-progress indicator ───────────────────────────────────────────── */
+.progress-indicator {
+  display: none;
+  margin: 24px 0;
+  padding: 20px 24px;
+  background: var(--off);
+  border: 1px solid var(--gray200);
+  border-radius: var(--radius);
+}
+.progress-indicator.show { display: block; }
+
+.progress-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray700);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid var(--gray200);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+
+@keyframes spin { to{ transform:rotate(360deg); } }
+
+.progress-steps {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.progress-step {
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 3px 10px;
+  border-radius: 100px;
+  background: var(--gray100);
+  color: var(--gray400);
+  transition: all .3s;
+}
+
+.progress-step.active {
+  background: var(--ink);
+  color: var(--white);
+}
+
+.progress-step.done {
+  background: #f0fdf4;
+  color: var(--accept);
+  border: 1px solid #bbf7d0;
+}
+
+/* ── log terminal ─────────────────────────────────────────────────────── */
+.log-terminal {
+  display: none;
+  margin-top: 16px;
+  background: var(--off);
+  border: 1px solid var(--gray200);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.8;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.log-terminal.show { display: block; }
+
+.log-line { display: flex; gap: 12px; }
+.log-ts { color: var(--gray300); flex-shrink: 0; }
+.log-info { color: var(--gray500); }
+.log-ok   { color: #16a34a; }
+.log-err  { color: #dc2626; }
+.log-blue { color: #2563eb; }
+
+/* ── proposal detail view ─────────────────────────────────────────────── */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.detail-cell {
+  background: var(--off);
+  border: 1px solid var(--gray200);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.detail-key {
+  font-size: 9px;
+  font-family: var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gray400);
+  margin-bottom: 5px;
+}
+
+.detail-val {
+  font-size: 13px;
+  color: var(--gray700);
+  word-break: break-all;
+}
+
+.detail-cell.span2 { grid-column: 1/-1; }
+
+/* ── list panel ──────────────────────────────────────────────────────── */
+.proposal-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.proposal-table th {
+  text-align: left;
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gray400);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--gray200);
+}
+
+.proposal-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--gray100);
+  font-size: 13px;
+  color: var(--gray700);
+  vertical-align: middle;
+}
+
+.proposal-table tr:hover td { background: var(--off); }
+
+.table-id {
+  font-family: var(--mono);
+  color: var(--gray400);
+}
+
+.table-rec {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 100px;
+  display: inline-block;
+}
+
+.table-rec.ACCEPT { background: #f0fdf4; color: var(--accept); }
+.table-rec.REVISE { background: #fffbeb; color: var(--revise); }
+.table-rec.REJECT { background: #fef2f2; color: var(--reject); }
+
+.table-link {
+  color: var(--gray400);
+  text-decoration: none;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.table-link:hover { color: var(--ink); }
+
+/* ── empty state ──────────────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--gray400);
+}
+.empty-icon { font-size: 36px; margin-bottom: 12px; }
+.empty-title {
+  font-family: var(--syne);
+  font-size: 16px;
+  color: var(--gray500);
+  margin-bottom: 6px;
+}
+.empty-sub { font-size: 13px; }
+
+/* ── about panel ─────────────────────────────────────────────────────── */
+.how-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.how-card {
+  border: 1px solid var(--gray200);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.how-step {
+  font-family: var(--syne);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gray300);
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.how-title {
+  font-family: var(--syne);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.how-body {
+  font-size: 13px;
+  color: var(--gray500);
+  line-height: 1.6;
+}
+
+.quorum-table {
+  width: 100%;
+  margin-top: 24px;
+  border-collapse: collapse;
+}
+.quorum-table th, .quorum-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--gray100);
+  font-size: 13px;
+}
+.quorum-table th {
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gray400);
+}
+
+/* ── scrollbar ────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--gray200); border-radius: 2px; }
+
+@media (max-width: 800px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .panel { padding: 24px 20px; }
+  .how-grid, .risks-benefits, .gauges-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon">⚖</div>
+      DAO Risk Scorer
+    </div>
+    <div class="header-chips">
+      <span class="chip chip-outline">GenLayer</span>
+      <span class="chip chip-outline" style="font-family:var(--mono)">Intelligent Contract</span>
+      <span class="chip chip-live"><span class="pulse"></span>Studionet</span>
+    </div>
+  </header>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Navigate</div>
+      <button class="nav-item active" onclick="nav('submit',this)">
+        <span class="icon">＋</span>Submit Proposal
+        <span class="badge">01</span>
+      </button>
+      <button class="nav-item" onclick="nav('history',this)">
+        <span class="icon">≡</span>All Proposals
+        <span class="badge">02</span>
+      </button>
+      <button class="nav-item" onclick="nav('lookup',this)">
+        <span class="icon">◈</span>Lookup by ID
+        <span class="badge">03</span>
+      </button>
+      <button class="nav-item" onclick="nav('about',this)">
+        <span class="icon">?</span>How It Works
+        <span class="badge">04</span>
+      </button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Recent Proposals</div>
+      <div id="sidebar-history">
+        <div style="font-size:11px;color:#333;padding:8px 10px;font-family:var(--mono)">
+          No proposals yet
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-widget">
+      <div class="sidebar-label" style="margin-bottom:10px">DAO Stats</div>
+      <div class="stats-grid">
+        <div class="stat-cell">
+          <div class="stat-num" id="stat-total">—</div>
+          <div class="stat-lbl">Total</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num" id="stat-accepted" style="color:#4ade80">—</div>
+          <div class="stat-lbl">Accepted</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num" id="stat-revised" style="color:#fbbf24">—</div>
+          <div class="stat-lbl">Revise</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-num" id="stat-rejected" style="color:#f87171">—</div>
+          <div class="stat-lbl">Rejected</div>
+        </div>
+        <div class="stat-cell span2">
+          <div class="stat-num" id="stat-dao" style="font-size:13px;color:#888">—</div>
+          <div class="stat-lbl">DAO Name</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- 01 SUBMIT -->
+    <div id="panel-submit" class="panel active">
+      <div class="panel-heading">
+        <div>
+          <div class="panel-title">Submit Proposal</div>
+          <div class="panel-sub">Each GenLayer validator independently evaluates risk and benefit · Protocol reaches consensus</div>
+        </div>
+        <div class="panel-num">01</div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="f-title">Proposal Title</label>
+        <input class="field-input" id="f-title" type="text"
+          placeholder="e.g. Allocate 50,000 GEN to Developer Grants Program"
+          oninput="countChars('f-title','cnt-title',5,200)">
+        <div class="field-count"><span id="cnt-title">0</span> / 200</div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="f-desc">Proposal Description</label>
+        <textarea class="field-textarea" id="f-desc"
+          placeholder="Describe the proposal in detail: objectives, budget, timeline, expected outcomes, implementation plan. The AI validators will use this to assess risk and benefit."
+          oninput="countChars('f-desc','cnt-desc',20,5000)"></textarea>
+        <div class="field-hint">Be specific — each of the 5 GenLayer validators reads this independently.</div>
+        <div class="field-count"><span id="cnt-desc">0</span> / 5000</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="submit-btn" onclick="doSubmit()">
+          Score Proposal →
+        </button>
+        <button class="btn btn-ghost" onclick="fillExample()">Fill Example</button>
+      </div>
+
+      <!-- progress -->
+      <div class="progress-indicator" id="progress">
+        <div class="progress-label">
+          <span class="spinner"></span>
+          Validator consensus in progress...
+        </div>
+        <div class="progress-steps">
+          <span class="progress-step" id="ps-1">Broadcasting</span>
+          <span class="progress-step" id="ps-2">Validators scoring</span>
+          <span class="progress-step" id="ps-3">Comparing results</span>
+          <span class="progress-step" id="ps-4">Reaching consensus</span>
+          <span class="progress-step" id="ps-5">Finalizing</span>
+        </div>
+      </div>
+
+      <!-- result -->
+      <div class="result-section" id="result-section">
+        <div class="result-header">
+          <div>
+            <div class="result-pid" id="res-pid">—</div>
+            <div class="result-title" id="res-title">—</div>
+          </div>
+          <div class="rec-badge" id="res-rec">—</div>
+        </div>
+
+        <!-- gauge row -->
+        <div class="gauges-row">
+          <!-- risk -->
+          <div class="gauge-card">
+            <div class="gauge-svg-wrap">
+              <svg class="gauge-svg" viewBox="0 0 100 54" width="100" height="54">
+                <path class="gauge-track"
+                  d="M 10 50 A 40 40 0 0 1 90 50"
+                  style="stroke-dasharray:none"/>
+                <path class="gauge-fill" id="g-risk-fill"
+                  d="M 10 50 A 40 40 0 0 1 90 50"
+                  stroke="var(--risk-hi)"/>
+              </svg>
+              <div class="gauge-val" id="g-risk-val">—</div>
+            </div>
+            <div class="gauge-label">Risk Score</div>
+            <div class="gauge-sub" id="g-risk-sub">—</div>
+          </div>
+          <!-- benefit -->
+          <div class="gauge-card">
+            <div class="gauge-svg-wrap">
+              <svg class="gauge-svg" viewBox="0 0 100 54" width="100" height="54">
+                <path class="gauge-track"
+                  d="M 10 50 A 40 40 0 0 1 90 50"/>
+                <path class="gauge-fill" id="g-benefit-fill"
+                  d="M 10 50 A 40 40 0 0 1 90 50"
+                  stroke="var(--risk-lo)"/>
+              </svg>
+              <div class="gauge-val" id="g-benefit-val">—</div>
+            </div>
+            <div class="gauge-label">Benefit Score</div>
+            <div class="gauge-sub" id="g-benefit-sub">—</div>
+          </div>
+          <!-- quorum gauge card -->
+          <div class="gauge-card" style="justify-content:center;gap:6px">
+            <div style="font-family:var(--syne);font-size:44px;font-weight:800;line-height:1;color:var(--ink)" id="g-quorum-val">—</div>
+            <div class="gauge-label">Required Quorum</div>
+            <div class="gauge-sub" id="g-quorum-sub">—</div>
+          </div>
+        </div>
+
+        <!-- analysis -->
+        <div class="analysis-block">
+          <div class="analysis-eyebrow">AI Consensus Summary</div>
+          <div class="analysis-text" id="res-analysis">—</div>
+        </div>
+
+        <!-- risks + benefits -->
+        <div class="risks-benefits">
+          <div class="rb-card risks">
+            <div class="rb-title">Key Risks</div>
+            <ul class="rb-list" id="res-risks"></ul>
+          </div>
+          <div class="rb-card benefits">
+            <div class="rb-title">Key Benefits</div>
+            <ul class="rb-list" id="res-benefits"></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="log-terminal" id="submit-log"></div>
+    </div>
+
+    <!-- 02 HISTORY -->
+    <div id="panel-history" class="panel">
+      <div class="panel-heading">
+        <div>
+          <div class="panel-title">All Proposals</div>
+          <div class="panel-sub">Every proposal scored on-chain — click to view detail</div>
+        </div>
+        <div class="panel-num">02</div>
+      </div>
+      <div class="btn-row" style="margin-bottom:24px;margin-top:0">
+        <button class="btn btn-ghost" onclick="loadHistory()">Refresh</button>
+      </div>
+      <div id="history-body">
+        <div class="empty-state">
+          <div class="empty-icon">○</div>
+          <div class="empty-title">No proposals found</div>
+          <div class="empty-sub">Submit the first proposal to get started</div>
+        </div>
+      </div>
+      <div class="log-terminal" id="history-log"></div>
+    </div>
+
+    <!-- 03 LOOKUP -->
+    <div id="panel-lookup" class="panel">
+      <div class="panel-heading">
+        <div>
+          <div class="panel-title">Lookup Proposal</div>
+          <div class="panel-sub">Retrieve full scoring by proposal ID</div>
+        </div>
+        <div class="panel-num">03</div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="lookup-id">Proposal ID</label>
+        <input class="field-input" id="lookup-id" type="text" placeholder="PROP-0001">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="doLookup()">Fetch →</button>
+      </div>
+
+      <div id="lookup-result" style="display:none;margin-top:28px">
+        <div class="result-header">
+          <div>
+            <div class="result-pid" id="lu-pid">—</div>
+            <div class="result-title" id="lu-title">—</div>
+          </div>
+          <div class="rec-badge" id="lu-rec">—</div>
+        </div>
+        <div class="detail-grid">
+          <div class="detail-cell">
+            <div class="detail-key">Proposer</div>
+            <div class="detail-val" id="lu-proposer">—</div>
+          </div>
+          <div class="detail-cell">
+            <div class="detail-key">Created</div>
+            <div class="detail-val" id="lu-created">—</div>
+          </div>
+          <div class="detail-cell">
+            <div class="detail-key">Risk Score</div>
+            <div class="detail-val" id="lu-risk">—</div>
+          </div>
+          <div class="detail-cell">
+            <div class="detail-key">Benefit Score</div>
+            <div class="detail-val" id="lu-benefit">—</div>
+          </div>
+          <div class="detail-cell">
+            <div class="detail-key">Required Quorum</div>
+            <div class="detail-val" id="lu-quorum">—</div>
+          </div>
+          <div class="detail-cell">
+            <div class="detail-key">Recommendation</div>
+            <div class="detail-val" id="lu-rec2">—</div>
+          </div>
+          <div class="detail-cell span2">
+            <div class="detail-key">Analysis</div>
+            <div class="detail-val" id="lu-analysis" style="font-size:13px;line-height:1.6">—</div>
+          </div>
+          <div class="detail-cell span2">
+            <div class="detail-key">Description</div>
+            <div class="detail-val" id="lu-desc" style="font-size:13px;line-height:1.6;max-height:120px;overflow-y:auto">—</div>
+          </div>
+        </div>
+        <div class="risks-benefits">
+          <div class="rb-card risks">
+            <div class="rb-title">Key Risks</div>
+            <ul class="rb-list" id="lu-risks"></ul>
+          </div>
+          <div class="rb-card benefits">
+            <div class="rb-title">Key Benefits</div>
+            <ul class="rb-list" id="lu-benefits"></ul>
+          </div>
+        </div>
+      </div>
+      <div class="log-terminal" id="lookup-log"></div>
+    </div>
+
+    <!-- 04 ABOUT -->
+    <div id="panel-about" class="panel">
+      <div class="panel-heading">
+        <div>
+          <div class="panel-title">How It Works</div>
+          <div class="panel-sub">Native GenLayer consensus — each validator independently scores proposals</div>
+        </div>
+        <div class="panel-num">04</div>
+      </div>
+
+      <div class="how-grid">
+        <div class="how-card">
+          <div class="how-step">STEP 01</div>
+          <div class="how-title">Submit Proposal</div>
+          <div class="how-body">You submit a title and description. The transaction is broadcast to all active GenLayer validator nodes simultaneously.</div>
+        </div>
+        <div class="how-card">
+          <div class="how-step">STEP 02</div>
+          <div class="how-title">Independent Scoring</div>
+          <div class="how-body">Each validator runs the LLM scoring prompt independently, returning a risk score (0–100), benefit score (0–100), and recommendation.</div>
+        </div>
+        <div class="how-card">
+          <div class="how-step">STEP 03</div>
+          <div class="how-title">Consensus Protocol</div>
+          <div class="how-body">The Optimistic Democracy protocol compares validator results. Consensus is reached when validators agree within a ±15 point tolerance on scores and match recommendations.</div>
+        </div>
+        <div class="how-card">
+          <div class="how-step">STEP 04</div>
+          <div class="how-title">On-Chain Result</div>
+          <div class="how-body">The finalized score, analysis, key risks, key benefits, and required voting quorum are stored permanently on-chain and readable by anyone.</div>
+        </div>
+      </div>
+
+      <div class="analysis-block" style="margin-top:24px">
+        <div class="analysis-eyebrow">Quorum Derivation</div>
+        <div class="analysis-text" style="margin-bottom:16px">
+          The required quorum for a DAO vote is automatically derived from the AI risk score — no manual configuration needed.
+        </div>
+        <table class="quorum-table">
+          <thead>
+            <tr>
+              <th>Risk Score</th>
+              <th>Level</th>
+              <th>Required Quorum</th>
+              <th>Rationale</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="font-family:var(--mono)">0 – 39</td>
+              <td><span style="color:var(--risk-lo);font-weight:600">Low</span></td>
+              <td><strong>51%</strong></td>
+              <td>Simple majority sufficient</td>
+            </tr>
+            <tr>
+              <td style="font-family:var(--mono)">40 – 69</td>
+              <td><span style="color:var(--risk-mid);font-weight:600">Medium</span></td>
+              <td><strong>60%</strong></td>
+              <td>Supermajority required</td>
+            </tr>
+            <tr>
+              <td style="font-family:var(--mono)">70 – 100</td>
+              <td><span style="color:var(--risk-hi);font-weight:600">High</span></td>
+              <td><strong>75%</strong></td>
+              <td>Strong consensus mandatory</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "genlayer":       "https://esm.sh/genlayer-js@latest?bundle&deps=viem@2.21.54",
+    "genlayer/chains":"https://esm.sh/genlayer-js@latest/chains?bundle&deps=viem@2.21.54"
+  }
+}
+</script>
+<script type="module">
+import { createClient, createAccount, generatePrivateKey } from 'genlayer';
+import { studionet } from 'genlayer/chains';
+
+// ── CONFIG — replace with your deployed contract address ──────────────────
+const CONTRACT_ADDRESS = '0x95032a87a392a47B906522886a0488384ca03bFD';
+
+// ── SDK account (no wallet needed) ───────────────────────────────────────
+function loadOrCreate(key) {
+  let pk = localStorage.getItem(key);
+  if (!pk) { pk = generatePrivateKey(); localStorage.setItem(key, pk); }
+  return pk;
+}
+
+const account = createAccount(loadOrCreate('dao_scorer_pk'));
+let glClient  = null;
+
+async function client() {
+  if (!glClient) {
+    glClient = createClient({ chain: studionet, account });
+  }
+  return glClient;
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────
+function ts() {
+  return new Date().toLocaleTimeString('en', { hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+
+function log(id, msg, type='info') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.add('show');
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  div.innerHTML = `<span class="log-ts">${ts()}</span><span class="log-${type}">${msg}</span>`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function readContract(method, args=[]) {
+  const c = await client();
+  return await c.readContract({ address: CONTRACT_ADDRESS, functionName: method, args });
+}
+
+async function writeContract(method, args=[], value=undefined) {
+  const c = await client();
+  const hash = await c.writeContract({ address: CONTRACT_ADDRESS, functionName: method, args, value });
+  return await c.waitForTransactionReceipt({ hash, status:'FINALIZED', retries:200, interval:10000 });
+}
+
+// ── nav ───────────────────────────────────────────────────────────────────
+window.nav = function(name, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'history') loadHistory();
+};
+
+// ── char counter ──────────────────────────────────────────────────────────
+window.countChars = function(inputId, countId, min, max) {
+  const el   = document.getElementById(inputId);
+  const cnt  = document.getElementById(countId);
+  const len  = el.value.length;
+  cnt.textContent = len;
+  cnt.style.color = len < min || len > max ? 'var(--risk-hi)' : 'var(--gray400)';
+};
+
+// ── score gauge animation ─────────────────────────────────────────────────
+function animateGauge(fillId, valId, subId, score, colorHi, colorLo) {
+  const fill = document.getElementById(fillId);
+  const valEl = document.getElementById(valId);
+  const sub   = document.getElementById(subId);
+
+  // arc length is 157 (half circle r=40 * π)
+  const offset = 157 - (score / 100) * 157;
+  fill.style.strokeDashoffset = offset;
+
+  // color based on score (for risk: high=red, low=green; for benefit: high=green, low=red)
+  const pct = score / 100;
+  let r, g, b;
+  if (colorHi === 'risk') {
+    // red (high) → amber (mid) → green (low)
+    if (score >= 70) { fill.style.stroke = 'var(--risk-hi)'; }
+    else if (score >= 40) { fill.style.stroke = 'var(--risk-mid)'; }
+    else { fill.style.stroke = 'var(--risk-lo)'; }
+  } else {
+    // green (high) → amber (mid) → red (low)
+    if (score >= 70) { fill.style.stroke = 'var(--risk-lo)'; }
+    else if (score >= 40) { fill.style.stroke = 'var(--risk-mid)'; }
+    else { fill.style.stroke = 'var(--risk-hi)'; }
+  }
+
+  // count-up animation
+  let current = 0;
+  const step = Math.ceil(score / 40);
+  const iv = setInterval(() => {
+    current = Math.min(current + step, score);
+    valEl.textContent = current;
+    if (current >= score) clearInterval(iv);
+  }, 30);
+
+  // label
+  if (colorHi === 'risk') {
+    sub.textContent = score >= 70 ? 'High risk' : score >= 40 ? 'Medium risk' : 'Low risk';
+  } else {
+    sub.textContent = score >= 70 ? 'High benefit' : score >= 40 ? 'Medium benefit' : 'Low benefit';
+  }
+}
+
+// ── progress steps ────────────────────────────────────────────────────────
+let progressTimer = null;
+function startProgress() {
+  document.getElementById('progress').classList.add('show');
+  const steps = ['ps-1','ps-2','ps-3','ps-4','ps-5'];
+  let i = 0;
+  steps.forEach(s => { document.getElementById(s).className = 'progress-step'; });
+  document.getElementById(steps[0]).classList.add('active');
+  progressTimer = setInterval(() => {
+    if (i > 0) document.getElementById(steps[i-1]).classList.replace('active','done');
+    i++;
+    if (i < steps.length) document.getElementById(steps[i]).classList.add('active');
+    else clearInterval(progressTimer);
+  }, 6000);
+}
+
+function endProgress() {
+  clearInterval(progressTimer);
+  ['ps-1','ps-2','ps-3','ps-4','ps-5'].forEach(s => {
+    document.getElementById(s).className = 'progress-step done';
+  });
+  setTimeout(() => {
+    document.getElementById('progress').classList.remove('show');
+    ['ps-1','ps-2','ps-3','ps-4','ps-5'].forEach(s => {
+      document.getElementById(s).className = 'progress-step';
+    });
+  }, 1000);
+}
+
+// ── render result ─────────────────────────────────────────────────────────
+function renderResult(data) {
+  document.getElementById('res-pid').textContent   = data.id;
+  document.getElementById('res-title').textContent = data.title;
+  document.getElementById('res-analysis').textContent = data.analysis || '—';
+
+  const rec = data.recommendation || 'REVISE';
+  const recEl = document.getElementById('res-rec');
+  recEl.textContent = rec;
+  recEl.className   = 'rec-badge rec-' + rec;
+
+  // gauges
+  animateGauge('g-risk-fill',    'g-risk-val',    'g-risk-sub',    data.risk_score,    'risk');
+  animateGauge('g-benefit-fill', 'g-benefit-val', 'g-benefit-sub', data.benefit_score, 'benefit');
+
+  document.getElementById('g-quorum-val').textContent = data.required_quorum + '%';
+  document.getElementById('g-quorum-sub').textContent =
+    data.risk_score >= 70 ? 'High-risk threshold' :
+    data.risk_score >= 40 ? 'Medium-risk threshold' : 'Standard threshold';
+
+  // risks & benefits
+  let risks = [], benefits = [];
+  try { risks    = JSON.parse(data.key_risks    || '[]'); } catch {}
+  try { benefits = JSON.parse(data.key_benefits || '[]'); } catch {}
+
+  const riskEl = document.getElementById('res-risks');
+  const benEl  = document.getElementById('res-benefits');
+  riskEl.innerHTML    = risks.map(r    => `<li>${r}</li>`).join('') || '<li>No data</li>';
+  benEl.innerHTML     = benefits.map(b => `<li>${b}</li>`).join('') || '<li>No data</li>';
+
+  document.getElementById('result-section').classList.add('show');
+}
+
+// ── submit proposal ───────────────────────────────────────────────────────
+window.doSubmit = async function() {
+  const title = document.getElementById('f-title').value.trim();
+  const desc  = document.getElementById('f-desc').value.trim();
+
+  if (title.length < 5)  { log('submit-log','Title must be at least 5 characters','err'); return; }
+  if (desc.length  < 20) { log('submit-log','Description must be at least 20 characters','err'); return; }
+  if (title.length > 200)  { log('submit-log','Title too long (max 200)','err'); return; }
+  if (desc.length  > 5000) { log('submit-log','Description too long (max 5000)','err'); return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite"></span> Scoring...';
+
+  document.getElementById('result-section').classList.remove('show');
+  log('submit-log','Sending proposal to GenLayer validators...','info');
+  startProgress();
+
+  try {
+    await writeContract('submit_proposal', [title, desc]);
+    endProgress();
+
+    // fetch the newly created proposal
+    const stats = await readContract('get_stats');
+    const total = Number(stats.total || 0);
+    const newId = 'PROP-' + String(total).padStart(4, '0');
+    log('submit-log', `Transaction finalized · ID: ${newId}`, 'ok');
+
+    const data = await readContract('get_proposal', [newId]);
+    if (data && data.id) {
+      renderResult(data);
+      log('submit-log', `Recommendation: ${data.recommendation} · Quorum: ${data.required_quorum}%`, 'ok');
+      loadStats();
+      loadSidebarHistory();
+    } else {
+      log('submit-log','Could not read proposal data — try lookup panel','err');
+    }
+  } catch(e) {
+    endProgress();
+    log('submit-log', 'Error: ' + (e?.shortMessage || e?.message || String(e)), 'err');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = 'Score Proposal →';
+};
+
+// ── load history table ─────────────────────────────────────────────────────
+window.loadHistory = async function() {
+  log('history-log','Fetching all proposals...','info');
+  const body = document.getElementById('history-body');
+  try {
+    const list = await readContract('list_proposals');
+    if (!list || list.length === 0) {
+      body.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">○</div>
+          <div class="empty-title">No proposals yet</div>
+          <div class="empty-sub">Submit the first proposal to get started</div>
+        </div>`;
+      log('history-log','No proposals found','info');
+      return;
+    }
+    const rows = list.map(p => `
+      <tr>
+        <td class="table-id">${p.id}</td>
+        <td>${p.title}</td>
+        <td><span class="table-rec ${p.recommendation}">${p.recommendation}</span></td>
+        <td style="font-family:var(--mono)">${p.risk_score}</td>
+        <td style="font-family:var(--mono)">${p.benefit_score}</td>
+        <td style="font-family:var(--mono)">${p.required_quorum}%</td>
+        <td>
+          <a class="table-link" href="javascript:void(0)"
+             onclick="quickLookup('${p.id}')">View →</a>
+        </td>
+      </tr>`).join('');
+    body.innerHTML = `
+      <table class="proposal-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Title</th>
+            <th>Recommendation</th>
+            <th>Risk</th>
+            <th>Benefit</th>
+            <th>Quorum</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    log('history-log',`Loaded ${list.length} proposals`,'ok');
+  } catch(e) {
+    log('history-log','Error: ' + (e?.shortMessage || e?.message || String(e)),'err');
+  }
+};
+
+window.quickLookup = function(id) {
+  document.getElementById('lookup-id').value = id;
+  const btn = document.querySelector('[onclick="nav(\'lookup\',this)"]');
+  nav('lookup', btn);
+  doLookup();
+};
+
+// ── lookup by id ─────────────────────────────────────────────────────────
+window.doLookup = async function() {
+  const id = document.getElementById('lookup-id').value.trim().toUpperCase();
+  if (!id) return;
+  log('lookup-log', `get_proposal(${id})...`, 'info');
+  document.getElementById('lookup-result').style.display = 'none';
+  try {
+    const data = await readContract('get_proposal', [id]);
+    if (!data || !data.id) {
+      log('lookup-log', 'Proposal not found', 'err');
+      return;
+    }
+    document.getElementById('lu-pid').textContent     = data.id;
+    document.getElementById('lu-title').textContent   = data.title;
+    document.getElementById('lu-proposer').textContent= data.proposer;
+    document.getElementById('lu-created').textContent = data.created_at?.slice(0,19).replace('T',' ') || '—';
+    document.getElementById('lu-risk').textContent    = data.risk_score + ' / 100';
+    document.getElementById('lu-benefit').textContent = data.benefit_score + ' / 100';
+    document.getElementById('lu-quorum').textContent  = data.required_quorum + '%';
+    document.getElementById('lu-rec2').textContent    = data.recommendation;
+    document.getElementById('lu-analysis').textContent= data.analysis || '—';
+    document.getElementById('lu-desc').textContent    = data.description || '—';
+
+    const rec = data.recommendation;
+    const recEl = document.getElementById('lu-rec');
+    recEl.textContent = rec;
+    recEl.className   = 'rec-badge rec-' + rec;
+
+    let risks = [], benefits = [];
+    try { risks    = JSON.parse(data.key_risks    || '[]'); } catch {}
+    try { benefits = JSON.parse(data.key_benefits || '[]'); } catch {}
+    document.getElementById('lu-risks').innerHTML    = risks.map(r    => `<li>${r}</li>`).join('') || '<li>—</li>';
+    document.getElementById('lu-benefits').innerHTML = benefits.map(b => `<li>${b}</li>`).join('') || '<li>—</li>';
+
+    document.getElementById('lookup-result').style.display = 'block';
+    log('lookup-log', 'Loaded · Recommendation: ' + data.recommendation, 'ok');
+  } catch(e) {
+    log('lookup-log', 'Error: ' + (e?.shortMessage || e?.message || String(e)), 'err');
+  }
+};
+
+// ── stats ─────────────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const s = await readContract('get_stats');
+    document.getElementById('stat-total').textContent    = s.total    ?? '—';
+    document.getElementById('stat-accepted').textContent = s.accepted ?? '—';
+    document.getElementById('stat-revised').textContent  = s.revised  ?? '—';
+    document.getElementById('stat-rejected').textContent = s.rejected ?? '—';
+    document.getElementById('stat-dao').textContent      = s.dao_name ?? '—';
+  } catch {}
+}
+
+async function loadSidebarHistory() {
+  try {
+    const list = await readContract('list_proposals');
+    const el = document.getElementById('sidebar-history');
+    if (!list || list.length === 0) {
+      el.innerHTML = '<div style="font-size:11px;color:#333;padding:8px 10px;font-family:var(--mono)">No proposals yet</div>';
+      return;
+    }
+    // show last 6
+    const recent = list.slice(-6).reverse();
+    el.innerHTML = recent.map(p => `
+      <div class="history-item" onclick="quickLookup('${p.id}')">
+        <span class="history-dot ${p.recommendation}"></span>
+        <div>
+          <div class="history-title">${p.title}</div>
+          <div class="history-meta">${p.id} · ${p.recommendation}</div>
+        </div>
+      </div>`).join('');
+  } catch {}
+}
+
+// ── fill example ──────────────────────────────────────────────────────────
+window.fillExample = function() {
+  document.getElementById('f-title').value =
+    'Allocate 100,000 GEN to Developer Grants Program Q3 2025';
+  document.getElementById('f-desc').value =
+    'This proposal requests 100,000 GEN from the DAO treasury to fund a developer grants program for Q3 2025. ' +
+    'Funds will be distributed across 10 grants of 10,000 GEN each to builders creating applications on the GenLayer protocol. ' +
+    'Selection will be managed by a 5-member elected grants committee using a public application process. ' +
+    'Recipients must deliver a working prototype within 90 days and submit monthly progress reports. ' +
+    'Unspent funds will be returned to the treasury at the end of the quarter. ' +
+    'Expected outcome: 10 new production-ready applications, increased developer activity, and ecosystem growth metrics documented in a public report.';
+  countChars('f-title','cnt-title',5,200);
+  countChars('f-desc','cnt-desc',20,5000);
+};
+
+// ── init ──────────────────────────────────────────────────────────────────
+loadStats();
+loadSidebarHistory();
+</script>
+</body>
+</html>
