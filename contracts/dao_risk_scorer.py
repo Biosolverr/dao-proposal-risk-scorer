@@ -4,7 +4,6 @@ import typing
 import json
 from genlayer import *
 from dataclasses import dataclass
-import datetime
 
 
 # ── Storage types ────────────────────────────────────────────────────────────
@@ -57,6 +56,17 @@ class DAORiskScorer(gl.Contract):
         if r >= 40:
             return u32(60)
         return u32(51)
+
+    def _recommendation_for(self, risk: int, benefit: int) -> str:
+        # Single source of truth for the ACCEPT/REVISE/REJECT decision.
+        # Both leader and validators call this on their OWN scores instead of
+        # trusting the LLM's free-text "recommendation" field, so consensus
+        # doesn't depend on the model phrasing the same word consistently.
+        if risk > 70 or benefit < 30:
+            return "REJECT"
+        if risk < 40 and benefit > 60:
+            return "ACCEPT"
+        return "REVISE"
 
     def _parse_json(self, raw: str) -> dict:
         cleaned = raw.strip()
@@ -140,11 +150,20 @@ class DAORiskScorer(gl.Contract):
                 self._build_prompt(title, description, full=True)
             )
             data = self._parse_json(raw)
+            if not data:
+                # Visible in Studio's execution log — makes silent LLM
+                # formatting failures debuggable instead of a mystery 50/50.
+                print("WARN leader: could not parse LLM JSON, using fallback scores")
+
+            risk    = max(0, min(100, int(data.get("risk_score",    50))))
+            benefit = max(0, min(100, int(data.get("benefit_score", 50))))
             return {
-                "risk_score":    max(0, min(100, int(data.get("risk_score",    50)))),
-                "benefit_score": max(0, min(100, int(data.get("benefit_score", 50)))),
-                "recommendation": str(data.get("recommendation", "REVISE")),
-                "analysis":       str(data.get("analysis",       "")),
+                "risk_score":     risk,
+                "benefit_score":  benefit,
+                # Derived deterministically from the agreed scores, not taken
+                # verbatim from the LLM — see _recommendation_for.
+                "recommendation": self._recommendation_for(risk, benefit),
+                "analysis":       str(data.get("analysis", "")),
                 "key_risks":      data.get("key_risks",    []),
                 "key_benefits":   data.get("key_benefits", []),
             }
@@ -157,13 +176,24 @@ class DAORiskScorer(gl.Contract):
                 self._build_prompt(title, description, full=False)
             )
             vd = self._parse_json(raw)
-            if abs(int(vd.get("risk_score",    50)) - int(ld["risk_score"]))    > 15:
+            if not vd:
+                print("WARN validator: could not parse LLM JSON")
                 return False
-            if abs(int(vd.get("benefit_score", 50)) - int(ld["benefit_score"])) > 15:
-                return False
-            return vd.get("recommendation") == ld["recommendation"]
 
-        return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+            v_risk    = max(0, min(100, int(vd.get("risk_score",    50))))
+            v_benefit = max(0, min(100, int(vd.get("benefit_score", 50))))
+            if abs(v_risk    - int(ld["risk_score"]))    > 15:
+                return False
+            if abs(v_benefit - int(ld["benefit_score"])) > 15:
+                return False
+
+            # Compare the *derived* recommendation on both sides instead of
+            # matching the LLM's raw string — removes wording/case drift as
+            # a spurious source of Undetermined transactions near the
+            # risk/benefit thresholds.
+            return self._recommendation_for(v_risk, v_benefit) == ld["recommendation"]
+
+        return gl.vm.run_nondet(leader_fn, validator_fn)
 
     # ── write methods ────────────────────────────────────────────────────────
 
@@ -192,7 +222,11 @@ class DAORiskScorer(gl.Contract):
             analysis=scored["analysis"],
             key_risks=json.dumps(scored["key_risks"]),
             key_benefits=json.dumps(scored["key_benefits"]),
-            created_at=datetime.datetime.now().isoformat(),
+            # gl.message_raw["datetime"] is agreed by consensus (same value
+            # for every validator); datetime.datetime.now() is NOT — each
+            # validator would compute a different wall-clock time and that
+            # mismatch would show up as unrelated storage-diff failures.
+            created_at=str(gl.message_raw["datetime"]),
         )
         self.proposals[pid] = proposal
         return pid
@@ -220,9 +254,18 @@ class DAORiskScorer(gl.Contract):
         }
 
     @gl.public.view
-    def list_proposals(self) -> list:
+    def list_proposals(self, offset: u32 = u32(0), limit: u32 = u32(0)) -> list:
+        # offset/limit are optional and default to "return everything", so
+        # existing frontend calls with no args keep working unchanged.
+        # Pass limit>0 to page through results as the proposal list grows.
+        off = int(offset)
+        lim = int(limit)
         result = []
+        skipped = 0
         for pid, p in self.proposals.items():
+            if skipped < off:
+                skipped += 1
+                continue
             result.append({
                 "id":              p.id,
                 "title":           p.title,
@@ -233,6 +276,8 @@ class DAORiskScorer(gl.Contract):
                 "required_quorum": int(p.required_quorum),
                 "created_at":      p.created_at,
             })
+            if lim > 0 and len(result) >= lim:
+                break
         return result
 
     @gl.public.view
@@ -266,3 +311,4 @@ class DAORiskScorer(gl.Contract):
     @gl.public.view
     def get_dao_name(self) -> str:
         return self.dao_name
+
