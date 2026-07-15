@@ -1271,7 +1271,7 @@ import { createClient, createAccount, generatePrivateKey } from 'genlayer';
 import { studionet } from 'genlayer/chains';
 
 // ── CONFIG — replace with your deployed contract address ──────────────────
-const CONTRACT_ADDRESS = '0x95032a87a392a47B906522886a0488384ca03bFD';
+const CONTRACT_ADDRESS = '0xCC3952fFef3a9a7a65a9460bE8Ae3Fafc547a71B';
 
 // ── SDK account (no wallet needed) ───────────────────────────────────────
 function loadOrCreate(key) {
@@ -1291,6 +1291,16 @@ async function client() {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
+// Proposal title/description/proposer are arbitrary user input stored
+// on-chain and later dropped into innerHTML for history/lookup/table views.
+// Escape them so a proposal can't inject markup/scripts into other users'
+// browsers when they view it.
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
 function ts() {
   return new Date().toLocaleTimeString('en', { hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit' });
 }
@@ -1433,8 +1443,8 @@ function renderResult(data) {
 
   const riskEl = document.getElementById('res-risks');
   const benEl  = document.getElementById('res-benefits');
-  riskEl.innerHTML    = risks.map(r    => `<li>${r}</li>`).join('') || '<li>No data</li>';
-  benEl.innerHTML     = benefits.map(b => `<li>${b}</li>`).join('') || '<li>No data</li>';
+  riskEl.innerHTML    = risks.map(r    => `<li>${escapeHtml(r)}</li>`).join('') || '<li>No data</li>';
+  benEl.innerHTML     = benefits.map(b => `<li>${escapeHtml(b)}</li>`).join('') || '<li>No data</li>';
 
   document.getElementById('result-section').classList.add('show');
 }
@@ -1458,13 +1468,20 @@ window.doSubmit = async function() {
   startProgress();
 
   try {
-    await writeContract('submit_proposal', [title, desc]);
+    const receipt = await writeContract('submit_proposal', [title, desc]);
     endProgress();
 
-    // fetch the newly created proposal
-    const stats = await readContract('get_stats');
-    const total = Number(stats.total || 0);
-    const newId = 'PROP-' + String(total).padStart(4, '0');
+    // submit_proposal returns the pid directly — read it off the receipt
+    // instead of reconstructing it from get_stats().total, which is a race
+    // condition: if another proposal gets finalized in between our write
+    // and that read, `total` no longer points at *our* proposal.
+    let newId = receipt?.result ?? receipt?.data?.result;
+    if (!newId) {
+      // Defensive fallback for older/simplified receipt shapes only —
+      // normal path above always has the id.
+      const stats = await readContract('get_stats');
+      newId = 'PROP-' + String(Number(stats.total || 0)).padStart(4, '0');
+    }
     log('submit-log', `Transaction finalized · ID: ${newId}`, 'ok');
 
     const data = await readContract('get_proposal', [newId]);
@@ -1504,7 +1521,7 @@ window.loadHistory = async function() {
     const rows = list.map(p => `
       <tr>
         <td class="table-id">${p.id}</td>
-        <td>${p.title}</td>
+        <td>${escapeHtml(p.title)}</td>
         <td><span class="table-rec ${p.recommendation}">${p.recommendation}</span></td>
         <td style="font-family:var(--mono)">${p.risk_score}</td>
         <td style="font-family:var(--mono)">${p.benefit_score}</td>
@@ -1573,8 +1590,8 @@ window.doLookup = async function() {
     let risks = [], benefits = [];
     try { risks    = JSON.parse(data.key_risks    || '[]'); } catch {}
     try { benefits = JSON.parse(data.key_benefits || '[]'); } catch {}
-    document.getElementById('lu-risks').innerHTML    = risks.map(r    => `<li>${r}</li>`).join('') || '<li>—</li>';
-    document.getElementById('lu-benefits').innerHTML = benefits.map(b => `<li>${b}</li>`).join('') || '<li>—</li>';
+    document.getElementById('lu-risks').innerHTML    = risks.map(r    => `<li>${escapeHtml(r)}</li>`).join('') || '<li>—</li>';
+    document.getElementById('lu-benefits').innerHTML = benefits.map(b => `<li>${escapeHtml(b)}</li>`).join('') || '<li>—</li>';
 
     document.getElementById('lookup-result').style.display = 'block';
     log('lookup-log', 'Loaded · Recommendation: ' + data.recommendation, 'ok');
@@ -1609,7 +1626,7 @@ async function loadSidebarHistory() {
       <div class="history-item" onclick="quickLookup('${p.id}')">
         <span class="history-dot ${p.recommendation}"></span>
         <div>
-          <div class="history-title">${p.title}</div>
+          <div class="history-title">${escapeHtml(p.title)}</div>
           <div class="history-meta">${p.id} · ${p.recommendation}</div>
         </div>
       </div>`).join('');
