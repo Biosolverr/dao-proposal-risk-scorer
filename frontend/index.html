@@ -1327,6 +1327,27 @@ async function writeContract(method, args=[], value=undefined) {
   return await c.waitForTransactionReceipt({ hash, status:'FINALIZED', retries:200, interval:10000 });
 }
 
+// Pulls a contract method's decoded return value out of a genlayer-js
+// transaction receipt. Studio/localnet receipts carry it at
+// consensus_data.leader_receipt[0].result.payload.readable, where
+// "readable" is a JSON-encoded string (e.g. '"PROP-0004"') — NOT at the
+// top-level receipt.result, which is just a numeric status code.
+function extractReturnedId(receipt) {
+  try {
+    const lr = receipt?.consensus_data?.leader_receipt;
+    const first = Array.isArray(lr) ? lr[0] : lr;
+    const status = first?.result?.status;
+    if (status && status !== 'return') return null; // rollback/error/etc.
+    let val = first?.result?.payload?.readable;
+    if (typeof val === 'string') {
+      try { val = JSON.parse(val); } catch { /* leave as-is */ }
+    }
+    return (typeof val === 'string' && val) ? val : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── nav ───────────────────────────────────────────────────────────────────
 window.nav = function(name, btn) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -1475,7 +1496,13 @@ window.doSubmit = async function() {
     // instead of reconstructing it from get_stats().total, which is a race
     // condition: if another proposal gets finalized in between our write
     // and that read, `total` no longer points at *our* proposal.
-    let newId = receipt?.result ?? receipt?.data?.result;
+    //
+    // receipt.result is a NUMERIC transaction status code, NOT the return
+    // value — the actual decoded return sits under consensus_data on the
+    // leader's receipt: consensus_data.leader_receipt[0].result.payload,
+    // with the value JSON-encoded as a string in `.readable`
+    // (genlayer-js's calldata serializer wraps strings in quotes).
+    let newId = extractReturnedId(receipt);
     if (!newId) {
       // Defensive fallback for older/simplified receipt shapes only —
       // normal path above always has the id.
