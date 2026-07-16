@@ -4,6 +4,12 @@ AI-powered DAO governance tool built on **GenLayer Intelligent Contracts**.
 
 Each GenLayer validator independently scores proposals via LLM, then the Optimistic Democracy protocol reaches consensus on the risk score, benefit score, and recommendation. The required voting quorum is derived automatically from the consensus risk score.
 
+## Deployed Contract
+
+| Network    | Address                                     |
+|------------|----------------------------------------------|
+| Studionet  | `0xCC3952fFef3a9a7a65a9460bE8Ae3Fafc547a71B` |
+
 ## How It Works
 
 ```
@@ -52,7 +58,7 @@ In `frontend/index.html`, replace:
 ```js
 const CONTRACT_ADDRESS = 'REPLACE_WITH_DEPLOYED_CONTRACT_ADDRESS';
 ```
-with your deployed address.
+with your deployed address (the current live deployment uses `0xCC3952fFef3a9a7a65a9460bE8Ae3Fafc547a71B`, see [Deployed Contract](#deployed-contract) above).
 
 ### 3. Run locally
 
@@ -81,13 +87,13 @@ Set `PORT` env var if needed. Vercel will serve `main.ts` as a Deno edge functio
 | Method | Args | Returns |
 |--------|------|---------|
 | `get_proposal` | `proposal_id: str` | Full proposal with scoring |
-| `list_proposals` | — | All proposals (summary) |
+| `list_proposals` | `offset: u32 = 0, limit: u32 = 0` | All proposals (summary), `limit=0` = no limit |
 | `get_stats` | — | Aggregate DAO stats |
 | `get_dao_name` | — | DAO name string |
 
 ## Tech Stack
 
-- **GenLayer Intelligent Contract** — Python, `gl.vm.run_nondet_unsafe`, `gl.nondet.exec_prompt`
+- **GenLayer Intelligent Contract** — Python, `gl.vm.run_nondet`, `gl.nondet.exec_prompt`
 - **Frontend** — Vanilla JS, `genlayer-js`, Google Fonts (Syne + Inter + JetBrains Mono)
 - **Server** — Deno (`std@0.224.0`)
 - **Deploy** — Vercel (frontend) + GenLayer Studio (contract)
