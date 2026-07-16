@@ -41,8 +41,7 @@ dao-proposal-risk-scorer/
 ├── contracts/
 │   └── dao_risk_scorer.py   ← GenLayer Intelligent Contract
 ├── frontend/
-│   └── index.html           ← Full frontend (single file)
-├── main.ts                  ← Deno static server
+│   └── index.html           ← Full frontend (single file, deployed as static site)
 └── README.md
 ```
 
@@ -62,19 +61,18 @@ with your deployed address (the current live deployment uses `0xCC3952fFef3a9a7a
 
 ### 3. Run locally
 
+Serve `frontend/` with any static file server, e.g.:
 ```bash
-deno run --allow-net --allow-read --allow-env main.ts
+npx serve frontend
 ```
-
-Open `http://localhost:8000`.
+or just open `frontend/index.html` directly in a browser.
 
 ### 4. Deploy to Vercel
 
+Deploy the `frontend/` folder as a static site:
 ```bash
 vercel --prod
 ```
-
-Set `PORT` env var if needed. Vercel will serve `main.ts` as a Deno edge function — or just deploy the `frontend/` folder as a static site directly.
 
 ## Contract Methods
 
@@ -95,5 +93,4 @@ Set `PORT` env var if needed. Vercel will serve `main.ts` as a Deno edge functio
 
 - **GenLayer Intelligent Contract** — Python, `gl.vm.run_nondet`, `gl.nondet.exec_prompt`
 - **Frontend** — Vanilla JS, `genlayer-js`, Google Fonts (Syne + Inter + JetBrains Mono)
-- **Server** — Deno (`std@0.224.0`)
-- **Deploy** — Vercel (frontend) + GenLayer Studio (contract)
+- **Deploy** — Vercel (static site) + GenLayer Studio (contract)
